@@ -8,7 +8,7 @@ import { AngularFirestore } from '@angular/fire/compat/firestore';
   templateUrl: './recoger.page.html',
   styleUrls: ['./recoger.page.scss'],
 })
-export class RecogerPage /*implements OnInit*/ {
+export class RecogerPage implements OnInit {
   uid: string = '';
   listoEnabled: boolean = false;
   carril: number | null = null;
@@ -20,28 +20,40 @@ export class RecogerPage /*implements OnInit*/ {
     private firestore: AngularFirestore
   ) {}
 
-  // ngOnInit() {
-  //   // Obtener el UID del localStorage
-  //   const uidParam = localStorage.getItem('uid');
-  //   if (uidParam !== null) {
-  //     this.crudService
-  //       .getUserByUid(uidParam)
-  //       .then((docId) => {
-  //         // Si se obtiene el ID del documento, establecerlo como UID
-  //         this.uid = docId;
-  //         console.log('UID:', this.uid);
-  //       })
-  //       .catch((error) => {
-  //         console.error('Error al obtener el ID del documento:', error);
-  //       });
-  //   } else {
-  //     console.error('UID is null');
-  //   }
-  // }
+  async ngOnInit() {
+    const uidParam = localStorage.getItem('uid');
+    if (uidParam !== null) {
+      try {
+        const docId = await this.crudService.getUserByUid(uidParam);
+        this.uid = docId;
+        console.log('UID:', this.uid);
+
+        // Verificar el estado de recogida del usuario
+        const userDoc = await this.firestore
+          .collection('usuarios')
+          .doc(this.uid)
+          .get()
+          .toPromise();
+        if (userDoc && userDoc.exists) {
+          const userData = userDoc.data() as
+            | { estadoRecogida?: string }
+            | undefined;
+          if (userData?.estadoRecogida === 'llegue') {
+            this.listoEnabled = true;
+          } else if (userData?.estadoRecogida === 'listo') {
+            this.listoEnabled = false;
+          }
+        }
+      } catch (error) {
+        console.error('Error al obtener el ID del documento:', error);
+      }
+    } else {
+      console.error('UID is null');
+    }
+  }
 
   segmentChanged(segmentValue: string) {
     if (segmentValue === 'alumno') {
-      // Navegar a la página de alumno y pasar el UID como parámetro de ruta
       this.router.navigate(['/alumno', { uid: this.uid }]);
     }
   }
@@ -53,7 +65,7 @@ export class RecogerPage /*implements OnInit*/ {
 
   async llegue() {
     try {
-      let uidParam = localStorage.getItem('uid');
+      const uidParam = localStorage.getItem('uid');
       if (!uidParam) {
         console.error('UID is null');
         return;
@@ -61,18 +73,15 @@ export class RecogerPage /*implements OnInit*/ {
 
       console.log('parametro', uidParam);
 
-      // Obtener el ID del documento
-      let documentId = await this.crudService.getUserByUid(uidParam);
+      const documentId = await this.crudService.getUserByUid(uidParam);
       console.log('UID:', documentId);
 
-      // Si no hay carril seleccionado o el documentId es inválido, salimos
       if (!documentId || !this.carril) {
         console.error('UID is null or carril is not selected');
         return;
       }
 
-      // Obtener todos los documentos de alumnos con el mismo UID
-      let querySnapshot = await this.firestore
+      const querySnapshot = await this.firestore
         .collection('alumnos', (ref) => ref.where('uid', '==', documentId))
         .get()
         .toPromise();
@@ -82,7 +91,6 @@ export class RecogerPage /*implements OnInit*/ {
         return;
       }
 
-      // Actualizar estado y carril de cada documento
       querySnapshot.forEach(async (doc) => {
         try {
           await doc.ref.update({ estado: true, carril: this.carril });
@@ -91,7 +99,6 @@ export class RecogerPage /*implements OnInit*/ {
             doc.id
           );
 
-          // Actualizar el estado de recogida en el usuario
           await this.firestore
             .collection('usuarios')
             .doc(this.uid)
@@ -114,7 +121,7 @@ export class RecogerPage /*implements OnInit*/ {
 
   async listo() {
     try {
-      let uidParam = localStorage.getItem('uid');
+      const uidParam = localStorage.getItem('uid');
       if (!uidParam) {
         console.error('UID is null');
         return;
@@ -122,8 +129,7 @@ export class RecogerPage /*implements OnInit*/ {
 
       console.log('parametro', uidParam);
 
-      // Obtener el ID del documento
-      let documentId = await this.crudService.getUserByUid(uidParam);
+      const documentId = await this.crudService.getUserByUid(uidParam);
       this.uid = documentId;
       console.log('UID:', this.uid);
 
@@ -132,8 +138,7 @@ export class RecogerPage /*implements OnInit*/ {
         return;
       }
 
-      // Obtener todos los documentos de alumnos con el mismo UID
-      let querySnapshot = await this.firestore
+      const querySnapshot = await this.firestore
         .collection('alumnos', (ref) => ref.where('uid', '==', this.uid))
         .get()
         .toPromise();
@@ -143,7 +148,6 @@ export class RecogerPage /*implements OnInit*/ {
         return;
       }
 
-      // Actualizar estado y carril de cada documento
       for (const doc of querySnapshot.docs) {
         try {
           await doc.ref.update({ estado: false, carril: null });
@@ -152,7 +156,6 @@ export class RecogerPage /*implements OnInit*/ {
             doc.id
           );
 
-          // Actualizar el estado de recogida en el usuario
           await this.firestore
             .collection('usuarios')
             .doc(this.uid)
@@ -173,14 +176,37 @@ export class RecogerPage /*implements OnInit*/ {
     }
   }
 
-  logout() {
-    // Eliminar el UID del almacenamiento local
-    localStorage.removeItem('uid');
+  async logout() {
+    try {
+      const uidParam = localStorage.getItem('uid');
+      if (!uidParam) {
+        console.error('UID is null');
+        return;
+      }
 
-    // Verificar si el UID se ha eliminado correctamente
-    console.log('UID después de eliminar:', localStorage.getItem('uid'));
+      const userDoc = await this.firestore
+        .collection('usuarios')
+        .doc(uidParam)
+        .get()
+        .toPromise();
+      if (userDoc && userDoc.exists) {
+        const userData = userDoc.data() as
+          | { estadoRecogida?: string }
+          | undefined;
+        if (userData?.estadoRecogida === 'llegue') {
+          await this.firestore
+            .collection('usuarios')
+            .doc(uidParam)
+            .update({ estadoRecogida: 'listo' });
+        }
+      }
 
-    // Redirigir al usuario a la página de login
-    this.router.navigate(['/login', { logout: true }]);
+      localStorage.removeItem('uid');
+      console.log('UID después de eliminar:', localStorage.getItem('uid'));
+
+      this.router.navigate(['/login', { logout: true }]);
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
   }
 }
